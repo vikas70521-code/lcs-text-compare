@@ -1,0 +1,4 @@
+Algorithms are step by step procedures for solving a problem. A good algorithm is correct, efficient and easy to understand.
+Dynamic programming solves a problem by breaking it into smaller overlapping subproblems and storing their answers.
+The longest common subsequence problem finds the longest sequence of items that appears in the same order in two sequences.
+It is used in file comparison tools, version control systems and bioinformatics.

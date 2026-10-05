@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCS Text Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<style>
+  /* Design idea: a proofreader's markup. Shared text stays calm; removals are
+     struck through, additions are underlined, exactly like marked-up copy. */
+  :root {
+    --ink: #1e2a38;  --muted: #5d6b7a;  --paper: #f3f6f8;  --panel: #ffffff;  --line: #d5dde4;
+    --same-bg: #d3eedd;  --same-fg: #17583a;
+    --del-bg: #f6d3d6;   --del-fg: #8f2630;
+    --ins-bg: #d2e4f7;   --ins-fg: #1b5389;
+    --ui: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --doc: "Literata", Georgia, "Times New Roman", serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--ui); }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font: 600 28px/1.2 var(--doc); margin: 0 0 6px; }
+  .lede { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+  :focus-visible { outline: 3px solid #1b5389; outline-offset: 2px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center;
+              padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  fieldset { border: 0; margin: 0; padding: 0; display: flex; gap: 6px; align-items: center; }
+  legend { float: left; margin-right: 10px; padding: 0; font-weight: 500; }
+  .seg label { padding: 6px 12px; border: 1px solid var(--line); cursor: pointer; background: var(--paper); }
+  .seg label:first-of-type { border-radius: 6px 0 0 6px; } .seg label:last-of-type { border-radius: 0 6px 6px 0; }
+  .seg input { position: absolute; opacity: 0; }
+  .seg input:checked + span { font-weight: 700; }
+  .seg label:has(input:checked) { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .seg label:has(input:focus-visible) { outline: 3px solid #1b5389; outline-offset: 2px; }
+  .check { display: flex; gap: 6px; align-items: center; }
+  select, button { font: inherit; }
+  select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .spacer { flex: 1; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+           color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 700; }
+  button:hover { filter: brightness(0.96); }
+
+  .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .doc label.title { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; margin-bottom: 6px; }
+  .doc input[type=file] { font-size: 13px; color: var(--muted); max-width: 55%; }
+  textarea { width: 100%; height: 220px; resize: vertical; padding: 12px; border: 1px solid var(--line);
+             border-radius: 8px; font: 16px/1.6 var(--doc); background: var(--panel); color: var(--ink); }
+
+  #error { color: var(--del-fg); background: var(--del-bg); padding: 10px 14px; border-radius: 6px; margin: 0 0 16px; }
+  #results[hidden], #error[hidden] { display: none; }
+
+  .verdict { font: 600 24px/1.3 var(--doc); margin: 8px 0 4px; }
+  .verdict small { display: block; font: 400 15px/1.5 var(--ui); color: var(--muted); margin-top: 4px; }
+  .bar { height: 10px; background: var(--del-bg); border-radius: 5px; overflow: hidden; margin: 14px 0 6px; display: flex; }
+  .bar i { display: block; background: #4aa877; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; margin: 10px 0 14px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  .tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 8px 14px; color: var(--muted); }
+  .tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 700; }
+  .view[hidden] { display: none; }
+
+  .paper { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px;
+           font: 17px/1.8 var(--doc); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .paper h2 { font: 700 14px var(--ui); margin: 0 0 8px; color: var(--muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .same { background: var(--same-bg); color: var(--same-fg); border-radius: 3px; }
+  .del  { background: var(--del-bg);  color: var(--del-fg);  text-decoration: line-through; border-radius: 3px; }
+  .ins  { background: var(--ins-bg);  color: var(--ins-fg);  text-decoration: underline; border-radius: 3px; }
+  .key .same, .key .del, .key .ins { padding: 1px 8px; }
+
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 22px; margin: 0 0 18px; }
+  dl.facts dt { color: var(--muted); } dl.facts dd { margin: 0; font-weight: 500; }
+  .formula { font: 15px/1.7 ui-monospace, Consolas, monospace; background: var(--panel); border: 1px solid var(--line);
+             padding: 12px 16px; border-radius: 8px; overflow-x: auto; white-space: pre; }
+  .tablewrap { overflow-x: auto; margin-top: 12px; }
+  table.dp { border-collapse: collapse; font: 14px var(--ui); background: var(--panel); }
+  table.dp th, table.dp td { border: 1px solid var(--line); padding: 5px 9px; text-align: center; min-width: 34px; }
+  table.dp th { background: var(--paper); font-weight: 700; }
+  table.dp td.hit { background: var(--same-bg); color: var(--same-fg); font-weight: 700; }
+  h3 { font: 600 18px var(--doc); margin: 22px 0 8px; }
+
+  @media (max-width: 760px) { .inputs, .two { grid-template-columns: 1fr; } .doc input[type=file] { max-width: 60%; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Compare two documents</h1>
+  <p class="lede">Finds the longest run of words (or lines, or characters) that appears in the same order in both documents, then marks everything else as removed or added.</p>
+
+  <div class="controls">
+    <fieldset class="seg"><legend>Compare by</legend>
+      <label><input type="radio" name="mode" value="word" checked><span>Words</span></label>
+      <label><input type="radio" name="mode" value="line"><span>Lines</span></label>
+      <label><input type="radio" name="mode" value="char"><span>Characters</span></label>
+    </fieldset>
+    <label class="check"><input type="checkbox" id="ignoreCase" checked> Ignore capitals</label>
+    <label class="check"><input type="checkbox" id="ignorePunct" checked> Ignore punctuation</label>
+    <label class="check">Algorithm
+      <select id="algorithm">
+        <option value="auto">Automatic</option>
+        <option value="dp">DP table</option>
+        <option value="hirschberg">Hirschberg (low memory)</option>
+      </select>
+    </label>
+    <span class="spacer"></span>
+    <button type="button" id="sampleBtn">Load sample</button>
+    <button type="button" id="clearBtn">Clear</button>
+    <button type="button" id="compareBtn" class="primary">Compare</button>
+  </div>
+
+  <div class="inputs">
+    <div class="doc">
+      <label class="title" for="textA">Document A (original) <input type="file" accept=".txt,.md,.csv,.log,text/plain" data-target="textA" aria-label="Upload a text file for document A"></label>
+      <textarea id="textA" spellcheck="false" placeholder="Paste text here, or upload a .txt file"></textarea>
+    </div>
+    <div class="doc">
+      <label class="title" for="textB">Document B (revised) <input type="file" accept=".txt,.md,.csv,.log,text/plain" data-target="textB" aria-label="Upload a text file for document B"></label>
+      <textarea id="textB" spellcheck="false" placeholder="Paste text here, or upload a .txt file"></textarea>
+    </div>
+  </div>
+
+  <p id="error" role="alert" hidden></p>
+
+  <section id="results" hidden aria-live="polite">
+    <p class="verdict" id="verdict"></p>
+    <div class="bar" id="bar" aria-hidden="true"><i id="barFill"></i></div>
+
+    <div class="legend key">
+      <span><span class="same">shared, in order</span> in the LCS</span>
+      <span><span class="del">removed</span> only in A</span>
+      <span><span class="ins">added</span> only in B</span>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-view="side">Side by side</button>
+      <button role="tab" aria-selected="false" data-view="merged">Combined</button>
+      <button role="tab" aria-selected="false" data-view="how">How it was computed</button>
+    </div>
+
+    <div class="view" id="view-side"><div class="two"><div class="paper" id="paperA"></div><div class="paper" id="paperB"></div></div></div>
+    <div class="view" id="view-merged" hidden><div class="paper" id="paperM"></div></div>
+    <div class="view" id="view-how" hidden>
+      <dl class="facts" id="facts"></dl>
+      <div class="formula">LCS[i][j] = 0                              if i = 0 or j = 0
+LCS[i][j] = LCS[i-1][j-1] + 1              if A[i] = B[j]
+LCS[i][j] = max(LCS[i-1][j], LCS[i][j-1])  otherwise</div>
+      <div id="tableBlock" hidden>
+        <h3>The DP table for this input</h3>
+        <p class="lede">Green cells are matches on the path that backtracking follows from the bottom-right corner.</p>
+        <div class="tablewrap" id="tableWrap"></div>
+      </div>
+      <h3>The common subsequence</h3>
+      <div class="paper" id="lcsText"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SAMPLE_A = `Algorithms are step by step procedures for solving a problem. A good algorithm is correct, efficient and easy to understand.
+Dynamic programming solves a problem by breaking it into smaller overlapping subproblems and storing their answers.
+The longest common subsequence problem finds the longest sequence of items that appears in the same order in two sequences.
+It is used in file comparison tools, version control systems and bioinformatics.`;
+const SAMPLE_B = `Algorithms are step by step procedures used to solve a problem. A good algorithm is correct, fast and easy to understand.
+Dynamic programming solves a problem by breaking it into smaller overlapping subproblems and saving their answers.
+The longest common subsequence problem finds the longest sequence of items that appears in the same order in two given sequences.
+It is widely used in plagiarism detection, version control systems and DNA analysis.`;
+
+const modeLabel = { word: "words", line: "lines", char: "characters" };
+
+function showError(msg) { $("error").textContent = msg; $("error").hidden = !msg; }
+
+/* Build <span> runs safely with textContent (never innerHTML) so pasted text can't inject markup. */
+function fillPaper(el, runs, sep, keep) {
+  el.replaceChildren();
+  const shown = runs.filter(r => keep.includes(r.type));
+  shown.forEach((r, i) => {
+    const span = document.createElement("span");
+    span.className = r.type === "equal" ? "same" : r.type === "delete" ? "del" : "ins";
+    span.textContent = r.text;
+    el.append(span);
+    if (i < shown.length - 1) el.append(document.createTextNode(sep === "\n" ? "\n" : sep || " "));
+  });
+  if (!shown.length) el.textContent = "(empty)";
+}
+
+function row(dl, label, value) {
+  const dt = document.createElement("dt"), dd = document.createElement("dd");
+  dt.textContent = label; dd.textContent = value; dl.append(dt, dd);
+}
+
+function drawTable(t) {
+  const hit = new Set(t.path.map(([i, j]) => i + "," + j));
+  const table = document.createElement("table"); table.className = "dp";
+  const head = table.insertRow();
+  ["", "∅", ...t.b].forEach(x => { const th = document.createElement("th"); th.textContent = x; head.append(th); });
+  t.rows.forEach((r, i) => {
+    const tr = table.insertRow();
+    const th = document.createElement("th"); th.textContent = i === 0 ? "∅" : t.a[i - 1]; tr.append(th);
+    r.forEach((v, j) => {
+      const td = tr.insertCell(); td.textContent = v;
+      if (hit.has(i + "," + j)) td.className = "hit";
+    });
+  });
+  $("tableWrap").replaceChildren(table);
+}
+
+function render(res) {
+  const pct = Math.round(res.similarity * 100);
+  $("verdict").replaceChildren();
+  $("verdict").append(`${pct}% similar`);
+  const small = document.createElement("small");
+  small.textContent = `${res.lcs_length} of ${res.len_a} ${modeLabel[res.mode]} in A also appear, in the same order, among the ${res.len_b} in B.`;
+  $("verdict").append(small);
+  $("barFill").style.width = pct + "%";
+
+  fillPaper($("paperA"), res.runs, res.separator, ["equal", "delete"]);
+  fillPaper($("paperB"), res.runs, res.separator, ["equal", "insert"]);
+  fillPaper($("paperM"), res.runs, res.separator, ["equal", "delete", "insert"]);
+
+  const dl = $("facts"); dl.replaceChildren();
+  row(dl, "Length of A / B", `${res.len_a} / ${res.len_b} ${modeLabel[res.mode]}`);
+  row(dl, "LCS length", res.lcs_length);
+  row(dl, "Similarity", `${(res.similarity * 100).toFixed(1)}%  =  2 × LCS ÷ (|A| + |B|)`);
+  row(dl, "Kept from A", `${(res.coverage_a * 100).toFixed(1)}% of A survives in B`);
+  row(dl, "Taken from A", `${(res.coverage_b * 100).toFixed(1)}% of B comes from A`);
+  row(dl, "Algorithm", res.algorithm === "dp" ? "Bottom-up DP table, O(m·n) time and space" : "Hirschberg, O(m·n) time, O(min(m,n)) space");
+  row(dl, "Table size", `${res.cells.toLocaleString()} cells before trimming common start and end`);
+  row(dl, "Run time", `${res.time_ms} ms`);
+
+  $("tableBlock").hidden = !res.table;
+  if (res.table) drawTable(res.table);
+  $("lcsText").textContent = res.lcs_tokens.length ? res.lcs_tokens.join(res.separator === "\n" ? "\n" : res.separator) : "(nothing in common)";
+  $("results").hidden = false;
+}
+
+async function runCompare() {
+  showError("");
+  const body = {
+    text_a: $("textA").value, text_b: $("textB").value,
+    mode: document.querySelector("input[name=mode]:checked").value,
+    ignore_case: $("ignoreCase").checked, ignore_punct: $("ignorePunct").checked,
+    algorithm: $("algorithm").value,
+  };
+  $("compareBtn").disabled = true;
+  try {
+    const resp = await fetch("/api/compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await resp.json();
+    if (!resp.ok) { $("results").hidden = true; showError(data.error || "Comparison failed."); return; }
+    render(data);
+  } catch (e) {
+    showError("Could not reach the server. Is app.py still running?");
+  } finally { $("compareBtn").disabled = false; }
+}
+
+$("compareBtn").addEventListener("click", runCompare);
+$("sampleBtn").addEventListener("click", () => { $("textA").value = SAMPLE_A; $("textB").value = SAMPLE_B; runCompare(); });
+$("clearBtn").addEventListener("click", () => { $("textA").value = ""; $("textB").value = ""; $("results").hidden = true; showError(""); });
+
+document.querySelectorAll("input[type=file]").forEach(input => input.addEventListener("change", () => {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { $(input.dataset.target).value = reader.result; };
+  reader.readAsText(file);
+}));
+
+document.querySelectorAll(".tabs button").forEach(btn => btn.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b === btn));
+  document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== "view-" + btn.dataset.view);
+}));
+</script>
+</body>
+</html>
